@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# Monitoring Setup Script for Amazon Linux
+
+# Prompt user for input
+read -p "Enter server hostname: " HOSTNAME
+read -p "Enter server IP address: " IP_ADDRESS
+
+# Install necessary packages (Prometheus and Grafana setup)
+echo "Installing Prometheus and Grafana..."
+sudo yum -y update
+sudo yum -y install wget
+
+# Download and install Prometheus
+echo "Downloading and installing Prometheus..."
+wget https://github.com/prometheus/prometheus/releases/download/v2.35.0/prometheus-2.35.0.linux-amd64.tar.gz
+tar xvfz prometheus-2.35.0.linux-amd64.tar.gz
+cd prometheus-2.35.0.linux-amd64
+sudo cp prometheus promtool /usr/local/bin/
+sudo cp -r consoles/ console_libraries/ /etc/prometheus/
+
+# Configure Prometheus
+echo "Configuring Prometheus..."
+sudo tee /etc/prometheus/prometheus.yml > /dev/null <<EOF
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
+EOF
+
+# Set permissions for Prometheus directories
+sudo mkdir -p /var/lib/prometheus
+sudo chmod -R 755 /etc/prometheus /var/lib/prometheus
+
+# Ensure Prometheus service is recognized and started
+echo "Starting Prometheus service..."
+sudo tee /etc/systemd/system/prometheus.service > /dev/null <<EOF
+[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=root
+Group=root
+Type=simple
+ExecStart=/usr/local/bin/prometheus \
+  --config.file /etc/prometheus/prometheus.yml \
+  --storage.tsdb.path /var/lib/prometheus \
+  --web.console.templates=/etc/prometheus/consoles \
+  --web.console.libraries=/etc/prometheus/console_libraries
+
+SyslogIdentifier=prometheus
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Start and enable Prometheus service
+sudo systemctl daemon-reload
+sudo systemctl start prometheus
+sudo systemctl enable prometheus
+
+# Download and install Grafana
+echo "Downloading and installing Grafana..."
+sudo wget https://dl.grafana.com/oss/release/grafana-8.0.7-1.x86_64.rpm
+sudo yum localinstall -y grafana-8.0.7-1.x86_64.rpm
+
+# Start and enable Grafana service
+echo "Starting and enabling Grafana service..."
+sudo systemctl daemon-reload
+sudo systemctl start grafana-server
+sudo systemctl enable grafana-server
+
+# Display setup completion message
+echo "Monitoring setup completed for $HOSTNAME ($IP_ADDRESS)"
+
+
